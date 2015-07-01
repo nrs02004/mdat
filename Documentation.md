@@ -13,7 +13,7 @@ SolveProblem(Prob, data)
 
 Similar to the sklearn model/fit/predict API.
 
-Prediction for 
+Prediction.
 
 # Language? 
 

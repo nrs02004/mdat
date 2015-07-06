@@ -20,6 +20,47 @@ function DxInv(x, order)
     return D
 end
 
+## x has to be sorted from smallest to largest
+function PenaltyMatrix(x, degree)
+    n = length(x)
+    Pen_mat = form_D(n)
+    counter = 1
+    while(counter < degree)
+        Pen_mat = form_D(n-counter) * DxInv(x,counter) * Pen_mat
+        counter = counter + 1
+    end
+    return Pen_mat
+end
+
+
+## Assume tract_values are ordered
+function formProblem(covariate_values, tract_data, location_degree, covariate_degree, tract_locations=None)
+
+    if(tract_locations == None)
+        tract_locations = 1:(size(tract_data)[2])
+    end
+
+    (combined_tract_data, weights, combined_covs)  = combine(covariate_values, tract_data)
+    perm = sortperm(combined_covs)
+    location_smoother = PenaltyMatrix(tract_locations, location_degree)
+    covariate_smoother = PenaltyMatrix(combined_covs[perm], covariate_degree)
+
+    return (perm, location_smoother, covariate_smoother, weights, combined_tract_data)
+end
+
+function solveProblem(problem, location_lambda, covariate_lambda)
+    (perm, location_smoother, covariate_smoother, weights, tract_data) = problem
+
+    (n, p) = size(tract_data)
+    fitted_values = Variable(n,p)
+    problem = minimize(quad_form(fitted_values - tract_data, diagm(vec(weights)))
+                       + covariate_lambda * norm(covariate_smoother * fitted_values[perm,:],1)
+                       + location_lambda * norm(location_smoother * (fitted_values'),1))
+    out = solve!(problem, ECOSSolver(max_it=100))
+    return fitted_values.value
+end
+
+
 ## Checks each row of a matrix for NAs --- returns row-numbers with NAs
 
 function hasNaN(X)
@@ -66,15 +107,15 @@ end
 
 ## Averages observations with the same age, and returns a new X vector, and weights corresponding to number of terms averaged
 
-function combine(ages, X)
+function combine(covariate, X)
     (n,p) = size(X)
-    unique_ages = unique(ages)
+    unique_covariate = unique(covariate)
     weights = Float32[]
     new_X = Array(Float32,0,p)
-    for age in unique_ages
-        push!(weights, sum(age.==ages))
-        new_X = vcat(new_X, mean(X[find(ages.==age),:],1))
+    for cov in unique_covariate
+        push!(weights, sum(cov.==covariate))
+        new_X = vcat(new_X, mean(X[find(covariate.==cov),:],1))
     end
-    return {"X"=>new_X, "w"=>weights, "age"=>unique_ages}
+    return (new_X, weights, unique_covariate)
 end
 
